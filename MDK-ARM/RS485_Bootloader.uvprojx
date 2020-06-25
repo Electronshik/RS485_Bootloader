@@ -427,6 +427,11 @@
               <FileType>1</FileType>
               <FilePath>..\Src\RS485_Simple_Boot.c</FilePath>
             </File>
+            <File>
+              <FileName>settings.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Src\settings.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>

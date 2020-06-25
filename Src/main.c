@@ -26,16 +26,26 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include <stdio.h>
 #include "RS485_Simple_Boot.c"
+#include "settings.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-	typedef  void (*pFunction)(void);
+typedef enum
+{
+	MAIN_APP_START,
+	WAIT_FOR_UPDATE,
+	UPDATE_LOAD_TO_MEM,
+	FLASH_LOAD
+} boot_state_t;
+typedef  void (*pFunction)(void);
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define	APP_ADDRESS		0x08004000
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -46,7 +56,7 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-
+boot_state_t State = MAIN_APP_START;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -57,7 +67,13 @@ void ExecMainFW (void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
+int fputc (int ch, FILE *f)
+{
+	HAL_GPIO_WritePin (RS485_DIR_GPIO_Port, RS485_DIR_Pin, GPIO_PIN_SET);
+	HAL_UART_Transmit(&huart3, (uint8_t *) &ch, 1, 1000);
+	HAL_GPIO_WritePin (RS485_DIR_GPIO_Port, RS485_DIR_Pin, GPIO_PIN_RESET);
+	return ch;
+}
 /* USER CODE END 0 */
 
 /**
@@ -67,7 +83,17 @@ void ExecMainFW (void);
 int main(void)
 {
   /* USER CODE BEGIN 1 */
-FLASH_EraseInitTypeDef FlashPage;
+	FLASH_EraseInitTypeDef FlashPage;
+	HAL_StatusTypeDef EraseStatus;
+	uint32_t PageError;
+	
+	FlashPage.TypeErase = FLASH_TYPEERASE_PAGES;
+	FlashPage.Banks = FLASH_BANK_1;
+	FlashPage.NbPages = 1;
+	FlashPage.PageAddress = APP_ADDRESS;
+	
+	uint32_t WordBuf;
+	char buf [32] = "Hello!\r\n";
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -85,81 +111,56 @@ FLASH_EraseInitTypeDef FlashPage;
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
-HAL_GPIO_WritePin(GPIOA, GPIO_PIN_10, GPIO_PIN_SET);
   MX_I2C1_Init();
   MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
-	HAL_GPIO_WritePin (RS485_DIR_GPIO_Port, RS485_DIR_Pin, GPIO_PIN_SET);
-	HAL_UART_Transmit(&huart3, (uint8_t *) "Boot..\r\n", 8, 1000);
-	HAL_GPIO_WritePin (RS485_DIR_GPIO_Port, RS485_DIR_Pin, GPIO_PIN_RESET);
-	uint32_t p = 0x08004000;
-	uint8_t crc;
-	crc = 0x10 + 0xA8 + 0x04 + 0x20 + 0x01 + 0x01 + 0x08 + 0xFB + 0x0F + 0x08 + 0xFF + 0x0E + 0x08;
-	char buf [32];
-	sprintf (buf, "sum: %02x; crc: %02x ;\r\n", crc, (256 - crc));
-	HAL_GPIO_WritePin (RS485_DIR_GPIO_Port, RS485_DIR_Pin, GPIO_PIN_SET);
-	HAL_UART_Transmit(&huart3, (uint8_t *) buf, strlen (buf), 1000);
-	HAL_GPIO_WritePin (RS485_DIR_GPIO_Port, RS485_DIR_Pin, GPIO_PIN_RESET);
-	uint32_t PageError;
-	
-	FlashPage.TypeErase = FLASH_TYPEERASE_PAGES;
-	FlashPage.Banks = FLASH_BANK_1;
-	FlashPage.NbPages = 1;
-	FlashPage.PageAddress = p;
-	
-	uint32_t WordBuf;
-	
-	HAL_StatusTypeDef EraseStatus;
+  
+  i2c_eeprom_write (0x08, (unsigned char *)&buf, sizeof(buf));
+  strcpy (buf, "Fuck that shit!");
+  i2c_eeprom_read (0x08, (unsigned char *)&buf, sizeof(buf));
+  printf ("Eeprom: %s", buf);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  while (1)
-  {
-    /* USER CODE END WHILE */
-		EraseStatus = HAL_FLASH_Unlock();
-		sprintf (buf, "HAL Unlock: %d\r\n", EraseStatus);
-		HAL_GPIO_WritePin (RS485_DIR_GPIO_Port, RS485_DIR_Pin, GPIO_PIN_SET);
-		HAL_UART_Transmit(&huart3, (uint8_t *) buf, strlen (buf), 1000);
-		HAL_GPIO_WritePin (RS485_DIR_GPIO_Port, RS485_DIR_Pin, GPIO_PIN_RESET);
-	  __HAL_FLASH_CLEAR_FLAG (FLASH_FLAG_EOP | FLASH_FLAG_WRPERR);
-		for(int erase_counter = 0; (erase_counter <= 32) && (EraseStatus == HAL_OK); erase_counter++)
+  State = WAIT_FOR_UPDATE;
+	while (1)
+	{
+		switch (State)
 		{
-			EraseStatus = HAL_FLASHEx_Erase (&FlashPage, &PageError);
-			FlashPage.PageAddress = p + (1024 * erase_counter);
+			case MAIN_APP_START:
+					ExecMainFW ();
+					HAL_GPIO_WritePin (RS485_DIR_GPIO_Port, RS485_DIR_Pin, GPIO_PIN_SET);
+					HAL_UART_Transmit(&huart3, (uint8_t *) "Not Jumped!!!\r\n", strlen ("Not Jumped!!!\r\n"), 1000);
+					HAL_GPIO_WritePin (RS485_DIR_GPIO_Port, RS485_DIR_Pin, GPIO_PIN_RESET);
+				break;
+			case FLASH_LOAD:
+					EraseStatus = HAL_FLASH_Unlock();
+					printf ("HAL Unlock: %d\r\n", EraseStatus);
+					for(int page_counter = 0; (page_counter <= 32) && (EraseStatus == HAL_OK); page_counter++)
+					{
+						EraseStatus = HAL_FLASHEx_Erase (&FlashPage, &PageError);
+						FlashPage.PageAddress = APP_ADDRESS + (1024 * page_counter);
+					}
+					for (int j = 0; j <= (5212UL + 1); )
+					{
+						j += 4;
+							WordBuf =  _acRS485_Simple_Boot[j+3] << 24;
+							WordBuf |= _acRS485_Simple_Boot[j+2] << 16;
+							WordBuf |= _acRS485_Simple_Boot[j+1] << 8;
+							WordBuf |= _acRS485_Simple_Boot[j+0];
+							EraseStatus = HAL_FLASH_Program (FLASH_TYPEPROGRAM_WORD, APP_ADDRESS+j, (uint64_t) WordBuf);
+							WordBuf = 0;
+					}
+					EraseStatus = HAL_FLASH_Lock();
+					printf ("HAL Lock: %d\r\n", EraseStatus);
+					HAL_Delay (300);
+					State = MAIN_APP_START;
+				break;
 		}
-		HAL_Delay (300);
-HAL_GPIO_WritePin (GPIOA, GPIO_PIN_10, GPIO_PIN_RESET);
-		for (int j = 0; j <= (5212UL + 1); )
-		{
-			//EraseStatus = HAL_FLASHEx_Erase (&FlashPage, &PageError);
-
-			//sprintf (buf, "HAL Erase: %d\r\n", EraseStatus);
-			//HAL_GPIO_WritePin (RS485_DIR_GPIO_Port, RS485_DIR_Pin, GPIO_PIN_SET);
-			//HAL_UART_Transmit(&huart3, (uint8_t *) buf, strlen (buf), 1000);
-			
-			//FlashPage.PageAddress += 1024;
-			j += 4;
-				WordBuf =  _acRS485_Simple_Boot[j+3] << 24;
-				WordBuf |= _acRS485_Simple_Boot[j+2] << 16;
-				WordBuf |= _acRS485_Simple_Boot[j+1] << 8;
-				WordBuf |= _acRS485_Simple_Boot[j+0];
-				EraseStatus = HAL_FLASH_Program (FLASH_TYPEPROGRAM_WORD, p+j, (uint64_t) WordBuf);
-				//p += 4;
-				WordBuf = 0;
-		}
-		EraseStatus = HAL_FLASH_Lock();
-		sprintf (buf, "HAL Lock: %d\r\n", EraseStatus);
-			HAL_GPIO_WritePin (RS485_DIR_GPIO_Port, RS485_DIR_Pin, GPIO_PIN_SET);
-			HAL_UART_Transmit(&huart3, (uint8_t *) buf, strlen (buf), 1000);
-			HAL_GPIO_WritePin (RS485_DIR_GPIO_Port, RS485_DIR_Pin, GPIO_PIN_RESET);
-		HAL_Delay (2000);
-		ExecMainFW ();
-			HAL_GPIO_WritePin (RS485_DIR_GPIO_Port, RS485_DIR_Pin, GPIO_PIN_SET);
-			HAL_UART_Transmit(&huart3, (uint8_t *) "Not Jumped!!!\r\n", strlen ("Not Jumped!!!\r\n"), 1000);
-			HAL_GPIO_WritePin (RS485_DIR_GPIO_Port, RS485_DIR_Pin, GPIO_PIN_RESET);
+/* USER CODE END WHILE */
     /* USER CODE BEGIN 3 */
-  }
+	}
   /* USER CODE END 3 */
 }
 
@@ -218,11 +219,11 @@ void ExecMainFW (void)
 	HAL_MspDeInit ();
 	HAL_DeInit ();
 */
-	SCB->VTOR = 0x8004000;
-	uint32_t jumpAddress = *((__IO uint32_t*) (0x8004000 + 4)); 
+	SCB->VTOR = APP_ADDRESS;
+	uint32_t jumpAddress = *((__IO uint32_t*) (APP_ADDRESS + 4)); 
 	pFunction Jump_To_Application = (pFunction) jumpAddress;
 	__disable_irq();
-	__set_MSP(*(__IO uint32_t*) 0x8004000); 
+	__set_MSP(*(__IO uint32_t*) APP_ADDRESS); 
 	Jump_To_Application(); 
 }
 /* USER CODE END 4 */
