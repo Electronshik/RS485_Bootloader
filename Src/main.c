@@ -20,6 +20,7 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "dma.h"
 #include "i2c.h"
 #include "usart.h"
 #include "gpio.h"
@@ -106,18 +107,27 @@ int main(void)
 
   /* Configure the system clock */
   SystemClock_Config();
+
   /* USER CODE BEGIN SysInit */
+// For I2c stm32f103 bug
+	__HAL_RCC_I2C1_CLK_ENABLE();
+	HAL_Delay(100);
+	__HAL_RCC_I2C1_FORCE_RESET();
+	HAL_Delay(100);
+	__HAL_RCC_I2C1_RELEASE_RESET();
+	HAL_Delay(100);
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
-  MX_GPIO_Init();
-  MX_I2C1_Init();
-  MX_USART3_UART_Init();
+	MX_GPIO_Init();
+	MX_DMA_Init();
+	MX_I2C1_Init();
+	MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
-  
-  i2c_eeprom_write (0x08, (unsigned char *)&buf, sizeof(buf));
+
+  i2c_eeprom_write (0x00, (unsigned char *)&buf, sizeof(buf));
   strcpy (buf, "Fuck that shit!");
-  i2c_eeprom_read (0x08, (unsigned char *)&buf, sizeof(buf));
+  i2c_eeprom_read (0x00, (unsigned char *)&buf, sizeof(buf));
   printf ("Eeprom: %s", buf);
   /* USER CODE END 2 */
 
@@ -158,7 +168,8 @@ int main(void)
 					State = MAIN_APP_START;
 				break;
 		}
-/* USER CODE END WHILE */
+    /* USER CODE END WHILE */
+
     /* USER CODE BEGIN 3 */
 	}
   /* USER CODE END 3 */
