@@ -11,6 +11,8 @@ extern "C" {
 //#define	USE_DEFAULT_SETTINGS
 #define	USE_UDP_REMOTE_IP
 
+#define I2C_EEPROM_PAGE_SIZE		64
+
 //#include "stdbool.h"
 
 typedef enum
@@ -43,6 +45,8 @@ typedef struct
 
 //hex_rec_type_t CheckHexCrc (unsigned char * line);
 //unsigned char *GetHexData (unsigned char * line);
+
+int i2c_eeprom_write_page (unsigned short PageAddress, unsigned char *Data);
 int i2c_eeprom_write (unsigned short MemAddress, unsigned char *pData, unsigned short Size);
 int i2c_eeprom_read (unsigned short MemAddress, unsigned char *pData, unsigned short Size);
 
