@@ -46,7 +46,8 @@ typedef  void (*pFunction)(void);
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define	APP_ADDRESS		0x08004000
+#define	APP_ADDRESS			0x08008000
+#define FLASH_PAGE_COUNT	1024
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -64,8 +65,11 @@ uint8_t Answer_Arr[8];
 uint32_t program_data;//????? ??????? ??????? ?? ????
     uint8_t calculated_checksum = 0 , income_checksum = 0;
 uint8_t MemPageBuf[64];
-uint8_t MemPageCounter = 0;
-uint8_t MemPageAddress = 0;
+int MemPageCounter = 0;
+int MemPageAddress = 0;
+int EndDataAddress = 0x08010000;
+int AppSize = 8000;
+uint8_t Flash_Buf[FLASH_PAGE_COUNT];
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -91,7 +95,7 @@ void Ascii_To_Hex( uint8_t* buff, uint8_t count)
 	
 	for(i=0; i<count;i++)
 	{
-		if(buff[i] <= '9' && buff[i] >= '0' )
+		if (buff[i] <= '9' && buff[i] >= '0')
 		{
 			buff[i] -= 0x30;
 		}
@@ -167,7 +171,7 @@ int main(void)
 	HAL_GPIO_WritePin (RS485_DIR_GPIO_Port, RS485_DIR_Pin, GPIO_PIN_RESET);
 	HAL_Delay (300);
 	HAL_UART_Receive (&huart3, (uint8_t *) buf, 7, 8000);
-	State = MAIN_APP_START;
+	State = WAIT_FOR_UPDATE;
 	//printf ("MAIN_APP_START: %s", buf);
 	if (buf[0] == 'M')
 	{
@@ -195,6 +199,7 @@ int main(void)
 		switch (State)
 		{
 			case MAIN_APP_START:
+					printf ("MAIN_APP_START.. \r\n");
 					ExecMainFW ();
 					HAL_GPIO_WritePin (RS485_DIR_GPIO_Port, RS485_DIR_Pin, GPIO_PIN_SET);
 					HAL_UART_Transmit(&huart3, (uint8_t *) "Not Jumped!!!\r\n", strlen ("Not Jumped!!!\r\n"), 1000);
@@ -203,20 +208,29 @@ int main(void)
 			case FLASH_LOAD:
 					EraseStatus = HAL_FLASH_Unlock();
 					printf ("HAL Unlock: %d\r\n", EraseStatus);
-					for(int page_counter = 0; (page_counter <= 32) && (EraseStatus == HAL_OK); page_counter++)
+					for(int page_counter = 0; (page_counter < 32) && (EraseStatus == HAL_OK); page_counter++)
 					{
 						EraseStatus = HAL_FLASHEx_Erase (&FlashPage, &PageError);
-						FlashPage.PageAddress = APP_ADDRESS + (1024 * page_counter);
+						FlashPage.PageAddress = APP_ADDRESS + (FLASH_PAGE_COUNT * page_counter);
 					}
-					for (int j = 0; j <= (5212UL + 1); )
+					AppSize = ((APP_ADDRESS + EndDataAddress) - APP_ADDRESS) / FLASH_PAGE_COUNT;
+					printf ("AppSize: %d\r\n", AppSize);
+					for (int j = 0; j <= AppSize; j++)
 					{
-						j += 4;
-							WordBuf =  _acRS485_Simple_Boot[j+3] << 24;
-							WordBuf |= _acRS485_Simple_Boot[j+2] << 16;
-							WordBuf |= _acRS485_Simple_Boot[j+1] << 8;
-							WordBuf |= _acRS485_Simple_Boot[j+0];
-							EraseStatus = HAL_FLASH_Program (FLASH_TYPEPROGRAM_WORD, APP_ADDRESS+j, (uint64_t) WordBuf);
-							WordBuf = 0;
+						if (i2c_eeprom_read (0, Flash_Buf, FLASH_PAGE_COUNT) > 0)
+						{
+							for (int k = 0; k < FLASH_PAGE_COUNT; k += 4)
+							{
+								WordBuf =  _acRS485_Simple_Boot[k+3] << 24;
+								WordBuf |= _acRS485_Simple_Boot[k+2] << 16;
+								WordBuf |= _acRS485_Simple_Boot[k+1] << 8;
+								WordBuf |= _acRS485_Simple_Boot[k+0];
+								EraseStatus = HAL_FLASH_Program (FLASH_TYPEPROGRAM_WORD, APP_ADDRESS + k + j*FLASH_PAGE_COUNT, (uint64_t) WordBuf);
+								WordBuf = 0;
+							}
+						}
+						printf ("HAL_FLASH_Program: %d\r\n", EraseStatus);
+						printf ("j: %x \r\n", APP_ADDRESS + j*FLASH_PAGE_COUNT);
 					}
 					EraseStatus = HAL_FLASH_Lock();
 					printf ("HAL Lock: %d\r\n", EraseStatus);
@@ -239,10 +253,10 @@ int main(void)
 					calculated_checksum = size_data/2 + (uint8_t)address_data + (uint8_t)(address_data>>8) + type_data;
 					if(type_data == 0x00)
 					{
-						HAL_UART_Receive (&huart3, (uint8_t *) buf, 32, 2000);
-						Ascii_To_Hex ((uint8_t*) buf, 32);
+						HAL_UART_Receive (&huart3, (uint8_t *) buf, size_data, 2000);
+						Ascii_To_Hex ((uint8_t*) buf, size_data);
 						int j = 0;
-						for(int i = 0; i < 32; i += 2)
+						for(int i = 0; i < size_data; i += 2)
 						{
 							j = (i + 32*MemPageCounter) / 2;
 							MemPageBuf[j] = (buf[i+1] + 16*buf[i]);
@@ -272,6 +286,11 @@ int main(void)
 									MemPageCounter = 0x03;
 									Answer_Arr [5] = 'E';
 									Answer_Arr [6] = 'R';
+									HAL_GPIO_WritePin (RS485_DIR_GPIO_Port, RS485_DIR_Pin, GPIO_PIN_SET);
+									HAL_UART_Transmit(&huart3, (uint8_t *) Answer_Arr, 7, 3000);
+									HAL_GPIO_WritePin (RS485_DIR_GPIO_Port, RS485_DIR_Pin, GPIO_PIN_RESET);
+									State = MAIN_APP_START;
+									break;
 								}
 							}
 						}
@@ -285,6 +304,34 @@ int main(void)
 						HAL_UART_Transmit(&huart3, (uint8_t *) Answer_Arr, 7, 3000);
 						HAL_GPIO_WritePin (RS485_DIR_GPIO_Port, RS485_DIR_Pin, GPIO_PIN_RESET);
 						//printf ("calculated_checksum: %02x \r\n", calculated_checksum);
+					}
+					else if (type_data == 0x01)
+					{
+						State = FLASH_LOAD;
+						if (MemPageCounter != 0)
+						{
+							State = FLASH_LOAD;
+							Answer_Arr [5] = 'O';
+							Answer_Arr [6] = 'K';
+							int tmp;
+								tmp = i2c_eeprom_write_page (MemPageAddress, MemPageBuf);
+								if (tmp > 0)
+								{
+									MemPageAddress = tmp;
+								}
+								else
+								{
+									MemPageCounter = 0x03;
+									Answer_Arr [5] = 'E';
+									Answer_Arr [6] = 'R';
+									State = MAIN_APP_START;
+								}
+							HAL_GPIO_WritePin (RS485_DIR_GPIO_Port, RS485_DIR_Pin, GPIO_PIN_SET);
+							HAL_UART_Transmit(&huart3, (uint8_t *) Answer_Arr, 7, 3000);
+							HAL_GPIO_WritePin (RS485_DIR_GPIO_Port, RS485_DIR_Pin, GPIO_PIN_RESET);
+						}
+						EndDataAddress = MemPageAddress + 64;
+						printf ("End, EndData: %d \r\n", EndDataAddress);
 					}
 				}
 				break;

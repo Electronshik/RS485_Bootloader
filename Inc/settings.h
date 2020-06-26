@@ -46,6 +46,7 @@ typedef struct
 //hex_rec_type_t CheckHexCrc (unsigned char * line);
 //unsigned char *GetHexData (unsigned char * line);
 
+int i2c_eeprom_erase (void);
 int i2c_eeprom_write_page (unsigned short PageAddress, unsigned char *Data);
 int i2c_eeprom_write (unsigned short MemAddress, unsigned char *pData, unsigned short Size);
 int i2c_eeprom_read (unsigned short MemAddress, unsigned char *pData, unsigned short Size);
