@@ -217,19 +217,19 @@ int main(void)
 					printf ("AppSize: %d\r\n", AppSize);
 					for (int j = 0; j <= AppSize; j++)
 					{
-						if (i2c_eeprom_read (0, Flash_Buf, FLASH_PAGE_COUNT) > 0)
+						if (i2c_eeprom_read (j*FLASH_PAGE_COUNT, Flash_Buf, FLASH_PAGE_COUNT) > 0)
 						{
 							for (int k = 0; k < FLASH_PAGE_COUNT; k += 4)
 							{
-								WordBuf =  _acRS485_Simple_Boot[k+3] << 24;
-								WordBuf |= _acRS485_Simple_Boot[k+2] << 16;
-								WordBuf |= _acRS485_Simple_Boot[k+1] << 8;
-								WordBuf |= _acRS485_Simple_Boot[k+0];
+								WordBuf =  Flash_Buf[k+3] << 24;
+								WordBuf |= Flash_Buf[k+2] << 16;
+								WordBuf |= Flash_Buf[k+1] << 8;
+								WordBuf |= Flash_Buf[k+0];
 								EraseStatus = HAL_FLASH_Program (FLASH_TYPEPROGRAM_WORD, APP_ADDRESS + k + j*FLASH_PAGE_COUNT, (uint64_t) WordBuf);
 								WordBuf = 0;
 							}
 						}
-						printf ("HAL_FLASH_Program: %d\r\n", EraseStatus);
+						//printf ("HAL_FLASH_Program: %d\r\n", EraseStatus);
 						printf ("j: %x \r\n", APP_ADDRESS + j*FLASH_PAGE_COUNT);
 					}
 					EraseStatus = HAL_FLASH_Lock();
