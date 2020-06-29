@@ -174,33 +174,35 @@ int main(void)
 	HAL_Delay (300);
 	for (int i = 0; i < 32; i++)
 	{
-		HAL_UART_Receive (&huart3, (uint8_t *) buf, 1, 100);
+		HAL_UART_Receive (&huart3, (uint8_t *) buf, 7, 300);
 		if (buf[0] == 'M')
 		{
-			HAL_UART_Receive (&huart3, (uint8_t *) buf, 1, 100);
-			if (buf[0] == '0')
+			//HAL_UART_Receive (&huart3, (uint8_t *) buf, 1, 100);
+			if (buf[1] == '0')
 			{
-				HAL_UART_Receive (&huart3, (uint8_t *) buf, 1, 100);
-				if (buf[0] == '1')
+				//HAL_UART_Receive (&huart3, (uint8_t *) buf, 1, 100);
+				if (buf[2] == '1')
 				{
-					HAL_UART_Receive (&huart3, (uint8_t *) buf, 1, 100);
-					if (buf[0] == ':')
+					//HAL_UART_Receive (&huart3, (uint8_t *) buf, 1, 100);
+					if (buf[3] == ':')
 					{
-						HAL_UART_Receive (&huart3, (uint8_t *) buf, 3, 100);
-						if ((buf[0] == 'R') && (buf[1] == 'D') && (buf[2] == 'Y'))
+						//HAL_UART_Receive (&huart3, (uint8_t *) buf, 3, 100);
+						if ((buf[4] == 'R') && (buf[5] == 'D') && (buf[6] == 'Y'))
 						{
 							//HAL_GPIO_WritePin (RS485_DIR_GPIO_Port, RS485_DIR_Pin, GPIO_PIN_SET);
 							//HAL_UART_Transmit(&huart3, (uint8_t *) "M03:RDY", 7, 3000);
 							//HAL_GPIO_WritePin (RS485_DIR_GPIO_Port, RS485_DIR_Pin, GPIO_PIN_RESET);
+							printf ("HAL_UART_Receive char: %c \r\n", buf[0]);
 							State = WAIT_FOR_UPDATE;
 							Answer_Arr [4] = ':';
 							Answer_Arr [7] = 0;
+							break;
 						}
 					}
 				}
 			}
 		}
-		HAL_Delay (10);
+		HAL_Delay (30);
 	}
 	while (1)
 	{
