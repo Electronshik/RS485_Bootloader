@@ -59,11 +59,11 @@ typedef  void (*pFunction)(void);
 
 /* USER CODE BEGIN PV */
 boot_state_t State = MAIN_APP_START;
-uint8_t size_data, type_data, check_sum;
-uint16_t address_data;
+uint8_t Hex_Data_Size, Hex_Data_Type, check_sum;
+uint16_t Hex_Data_Address;
 uint8_t Answer_Arr[8];
 uint32_t program_data;//????? ??????? ??????? ?? ????
-    uint8_t calculated_checksum = 0 , income_checksum = 0;
+    uint8_t Hex_Data_Calculated_Crc = 0 , Hex_Data_Income_Crc = 0;
 uint8_t MemPageBuf[64];
 int MemPageCounter = 0;
 int MemPageAddress = 0;
@@ -200,7 +200,7 @@ int main(void)
 				}
 			}
 		}
-		HAL_Delay (10);
+		HAL_Delay (100);
 	}
 	while (1)
 	{
@@ -255,28 +255,28 @@ int main(void)
 					Answer_Arr [2] = buf[4];
 					Answer_Arr [3] = buf[5];
 					Ascii_To_Hex ((uint8_t*) buf, 8);
-					size_data = 2*(buf[1] + 16*buf[0]);
-					address_data = buf[5] + 16*buf[4] + 256*buf[3] + 4096*buf[2];
-					type_data = buf[7] + 16*buf[6];
-					calculated_checksum = size_data/2 + (uint8_t)address_data + (uint8_t)(address_data>>8) + type_data;
-					if(type_data == 0x00)
+					Hex_Data_Size = 2*(buf[1] + 16*buf[0]);
+					Hex_Data_Address = buf[5] + 16*buf[4] + 256*buf[3] + 4096*buf[2];
+					Hex_Data_Type = buf[7] + 16*buf[6];
+					Hex_Data_Calculated_Crc = Hex_Data_Size/2 + (uint8_t)Hex_Data_Address + (uint8_t)(Hex_Data_Address>>8) + Hex_Data_Type;
+					if(Hex_Data_Type == 0x00)
 					{
-						HAL_UART_Receive (&huart3, (uint8_t *) buf, size_data, 2000);
-						Ascii_To_Hex ((uint8_t*) buf, size_data);
+						HAL_UART_Receive (&huart3, (uint8_t *) buf, Hex_Data_Size, 2000);
+						Ascii_To_Hex ((uint8_t*) buf, Hex_Data_Size);
 						int j = 0;
-						for(int i = 0; i < size_data; i += 2)
+						for(int i = 0; i < Hex_Data_Size; i += 2)
 						{
 							j = (i + 32*MemPageCounter) / 2;
 							MemPageBuf[j] = (buf[i+1] + 16*buf[i]);
-							calculated_checksum += MemPageBuf[j];
+							Hex_Data_Calculated_Crc += MemPageBuf[j];
 						}
 						//HAL_Delay (180);
 						//printf ("MemPageBuf: %02x %02x %02x %02x %02x %02x %02x %02x \r\n", MemPageBuf[7], MemPageBuf[6], MemPageBuf[5], MemPageBuf[4], MemPageBuf[3], MemPageBuf[2], MemPageBuf[1], MemPageBuf[0]);
 						HAL_UART_Receive (&huart3, (uint8_t *) buf, 2, 2000);
 						Ascii_To_Hex ((uint8_t*) buf, 2);
-						income_checksum = (buf[1] + 16*buf[0]);
-						calculated_checksum = 256 - calculated_checksum;
-						if (calculated_checksum == income_checksum)
+						Hex_Data_Income_Crc = (buf[1] + 16*buf[0]);
+						Hex_Data_Calculated_Crc = 256 - Hex_Data_Calculated_Crc;
+						if (Hex_Data_Calculated_Crc == Hex_Data_Income_Crc)
 						{
 							Answer_Arr [5] = 'O';
 							Answer_Arr [6] = 'K';
@@ -311,9 +311,9 @@ int main(void)
 						HAL_GPIO_WritePin (RS485_DIR_GPIO_Port, RS485_DIR_Pin, GPIO_PIN_SET);
 						HAL_UART_Transmit(&huart3, (uint8_t *) Answer_Arr, 7, 3000);
 						HAL_GPIO_WritePin (RS485_DIR_GPIO_Port, RS485_DIR_Pin, GPIO_PIN_RESET);
-						//printf ("calculated_checksum: %02x \r\n", calculated_checksum);
+						//printf ("Hex_Data_Calculated_Crc: %02x \r\n", Hex_Data_Calculated_Crc);
 					}
-					else if (type_data == 0x01)
+					else if (Hex_Data_Type == 0x01)
 					{
 						State = FLASH_LOAD;
 						if (MemPageCounter != 0)
@@ -340,6 +340,14 @@ int main(void)
 						}
 						EndDataAddress = MemPageAddress + 64;
 						printf ("End, EndData: %d \r\n", EndDataAddress);
+					}
+					else if (Hex_Data_Type == 0x05)
+					{
+						Answer_Arr [5] = 'O';
+						Answer_Arr [6] = 'K';
+						HAL_GPIO_WritePin (RS485_DIR_GPIO_Port, RS485_DIR_Pin, GPIO_PIN_SET);
+						HAL_UART_Transmit(&huart3, (uint8_t *) Answer_Arr, 7, 3000);
+						HAL_GPIO_WritePin (RS485_DIR_GPIO_Port, RS485_DIR_Pin, GPIO_PIN_RESET);
 					}
 				}
 				break;
