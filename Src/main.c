@@ -46,8 +46,9 @@ typedef  void (*pFunction)(void);
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define	APP_ADDRESS			0x08008000
-#define FLASH_PAGE_COUNT	1024
+#define	APP_ADDRESS				0x08008000
+#define FLASH_PAGE_COUNT		1024
+#define LINES_PER_EEPROM_PAGE	I2C_EEPROM_PAGE_SIZE/16
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -64,7 +65,7 @@ uint16_t Hex_Data_Address;
 uint8_t Answer_Arr[8];
 uint32_t program_data;//????? ??????? ??????? ?? ????
     uint8_t Hex_Data_Calculated_Crc = 0 , Hex_Data_Income_Crc = 0;
-uint8_t MemPageBuf[64];
+uint8_t MemPageBuf[I2C_EEPROM_PAGE_SIZE];
 int MemPageCounter = 0;
 int MemPageAddress = 0;
 int EndDataAddress = 0x08010000;
@@ -86,6 +87,13 @@ int fputc (int ch, FILE *f)
 	HAL_UART_Transmit(&huart3, (uint8_t *) &ch, 1, 1000);
 	HAL_GPIO_WritePin (RS485_DIR_GPIO_Port, RS485_DIR_Pin, GPIO_PIN_RESET);
 	return ch;
+}
+
+void RS485_Transmit (uint8_t Tx_Buff[], uint16_t size)
+{
+	HAL_GPIO_WritePin (RS485_DIR_GPIO_Port, RS485_DIR_Pin, GPIO_PIN_SET);
+	HAL_UART_Transmit(&huart3, (uint8_t *) Tx_Buff, size, 1000);
+	HAL_GPIO_WritePin (RS485_DIR_GPIO_Port, RS485_DIR_Pin, GPIO_PIN_RESET);
 }
 
 /*??????? ??????????? ascii ? hex*/
@@ -165,14 +173,12 @@ int main(void)
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
 	for (int i = 0; i < 32; i++) buf[i] = 0;
-	HAL_GPIO_WritePin (RS485_DIR_GPIO_Port, RS485_DIR_Pin, GPIO_PIN_SET);
-	HAL_UART_Transmit(&huart3, (uint8_t *) "M03:RDY", 7, 3000);
-	HAL_GPIO_WritePin (RS485_DIR_GPIO_Port, RS485_DIR_Pin, GPIO_PIN_RESET);
+	RS485_Transmit ((uint8_t *) "M03:RDY", 7);
 	//HAL_UART_Receive (&huart3, (uint8_t *) buf, 7, 8000);
 	State = MAIN_APP_START;
 	//printf ("MAIN: %s", buf);
 	HAL_Delay (300);
-	for (int i = 0; i < 32; i++)
+	for (int i = 0; i < 64; i++)
 	{
 		HAL_UART_Receive (&huart3, (uint8_t *) buf, 1, 300);
 		if (buf[0] == 'M')
@@ -189,11 +195,10 @@ int main(void)
 						HAL_UART_Receive (&huart3, (uint8_t *) buf, 3, 100);
 						if ((buf[0] == 'R') && (buf[1] == 'D') && (buf[2] == 'Y'))
 						{
-							//HAL_GPIO_WritePin (RS485_DIR_GPIO_Port, RS485_DIR_Pin, GPIO_PIN_SET);
-							//HAL_UART_Transmit(&huart3, (uint8_t *) "M03:RDY", 7, 3000);
-							//HAL_GPIO_WritePin (RS485_DIR_GPIO_Port, RS485_DIR_Pin, GPIO_PIN_RESET);
-							printf ("HAL_UART_Receive char: %c \r\n", buf[0]);
+							HAL_Delay (80);
+							RS485_Transmit ((uint8_t *) "M03:RDY", 7);
 							State = WAIT_FOR_UPDATE;
+							EndDataAddress = 0x0000;
 							Answer_Arr [4] = ':';
 							Answer_Arr [7] = 0;
 							break;
@@ -211,9 +216,7 @@ int main(void)
 			case MAIN_APP_START:
 					printf ("MAIN_APP_START.. \r\n");
 					ExecMainFW ();
-					HAL_GPIO_WritePin (RS485_DIR_GPIO_Port, RS485_DIR_Pin, GPIO_PIN_SET);
-					HAL_UART_Transmit(&huart3, (uint8_t *) "Not Jumped!!!\r\n", strlen ("Not Jumped!!!\r\n"), 1000);
-					HAL_GPIO_WritePin (RS485_DIR_GPIO_Port, RS485_DIR_Pin, GPIO_PIN_RESET);
+					RS485_Transmit ((uint8_t *) "Not Jumped!!!\r\n", 15);
 				break;
 			case FLASH_LOAD:
 					EraseStatus = HAL_FLASH_Unlock();
@@ -240,7 +243,7 @@ int main(void)
 							}
 						}
 						//printf ("HAL_FLASH_Program: %d\r\n", EraseStatus);
-						printf ("j: %x \r\n", APP_ADDRESS + j*FLASH_PAGE_COUNT);
+						//printf ("j: %x \r\n", APP_ADDRESS + j*FLASH_PAGE_COUNT);
 					}
 					EraseStatus = HAL_FLASH_Lock();
 					printf ("HAL Lock: %d\r\n", EraseStatus);
@@ -271,6 +274,7 @@ int main(void)
 							j = (i + 32*MemPageCounter) / 2;
 							MemPageBuf[j] = (buf[i+1] + 16*buf[i]);
 							Hex_Data_Calculated_Crc += MemPageBuf[j];
+							EndDataAddress++;
 						}
 						//HAL_Delay (180);
 						//printf ("MemPageBuf: %02x %02x %02x %02x %02x %02x %02x %02x \r\n", MemPageBuf[7], MemPageBuf[6], MemPageBuf[5], MemPageBuf[4], MemPageBuf[3], MemPageBuf[2], MemPageBuf[1], MemPageBuf[0]);
@@ -282,7 +286,7 @@ int main(void)
 						{
 							Answer_Arr [5] = 'O';
 							Answer_Arr [6] = 'K';
-							if (++MemPageCounter >= 4)
+							if (++MemPageCounter >= LINES_PER_EEPROM_PAGE)
 							{
 								MemPageCounter = 0;
 								int tmp;
@@ -293,12 +297,10 @@ int main(void)
 								}
 								else
 								{
-									MemPageCounter = 0x03;
+									MemPageCounter = LINES_PER_EEPROM_PAGE - 1;
 									Answer_Arr [5] = 'E';
 									Answer_Arr [6] = 'R';
-									HAL_GPIO_WritePin (RS485_DIR_GPIO_Port, RS485_DIR_Pin, GPIO_PIN_SET);
-									HAL_UART_Transmit(&huart3, (uint8_t *) Answer_Arr, 7, 3000);
-									HAL_GPIO_WritePin (RS485_DIR_GPIO_Port, RS485_DIR_Pin, GPIO_PIN_RESET);
+									RS485_Transmit (Answer_Arr, 7);
 									State = MAIN_APP_START;
 									break;
 								}
@@ -309,10 +311,7 @@ int main(void)
 							Answer_Arr [5] = 'N';
 							Answer_Arr [6] = 'O';
 						}
-						
-						HAL_GPIO_WritePin (RS485_DIR_GPIO_Port, RS485_DIR_Pin, GPIO_PIN_SET);
-						HAL_UART_Transmit(&huart3, (uint8_t *) Answer_Arr, 7, 3000);
-						HAL_GPIO_WritePin (RS485_DIR_GPIO_Port, RS485_DIR_Pin, GPIO_PIN_RESET);
+						RS485_Transmit (Answer_Arr, 7);
 						//printf ("Hex_Data_Calculated_Crc: %02x \r\n", Hex_Data_Calculated_Crc);
 					}
 					else if (Hex_Data_Type == 0x01)
@@ -331,27 +330,31 @@ int main(void)
 								}
 								else
 								{
-									MemPageCounter = 0x03;
+									MemPageCounter = LINES_PER_EEPROM_PAGE - 1;
 									Answer_Arr [5] = 'E';
 									Answer_Arr [6] = 'R';
 									State = MAIN_APP_START;
 								}
-							HAL_GPIO_WritePin (RS485_DIR_GPIO_Port, RS485_DIR_Pin, GPIO_PIN_SET);
-							HAL_UART_Transmit(&huart3, (uint8_t *) Answer_Arr, 7, 3000);
-							HAL_GPIO_WritePin (RS485_DIR_GPIO_Port, RS485_DIR_Pin, GPIO_PIN_RESET);
+							RS485_Transmit (Answer_Arr, 7);
 						}
-						EndDataAddress = MemPageAddress + 64;
-						printf ("\r\n EndData, Running main.. %d \r\n", EndDataAddress);
+						//EndDataAddress = MemPageAddress + 64;
+						HAL_Delay (15);
+						printf ("\r\n Running main.. EndDAddr: %x; MemPageAddr: %x\r\n", EndDataAddress, MemPageAddress);
 					}
 					else if (Hex_Data_Type == 0x05)
 					{
 						//printf ("End, 0x05: \r\n");
-						HAL_Delay (2);
+						HAL_Delay (5);
 						Answer_Arr [5] = 'O';
 						Answer_Arr [6] = 'K';
-						HAL_GPIO_WritePin (RS485_DIR_GPIO_Port, RS485_DIR_Pin, GPIO_PIN_SET);
-						HAL_UART_Transmit(&huart3, (uint8_t *) Answer_Arr, 7, 3000);
-						HAL_GPIO_WritePin (RS485_DIR_GPIO_Port, RS485_DIR_Pin, GPIO_PIN_RESET);
+						RS485_Transmit (Answer_Arr, 7);
+					}
+					else
+					{
+						HAL_Delay (5);
+						Answer_Arr [5] = 'O';
+						Answer_Arr [6] = 'K';
+						RS485_Transmit (Answer_Arr, 7);
 					}
 				}
 				break;
