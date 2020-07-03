@@ -96,20 +96,17 @@ void RS485_Transmit (uint8_t Tx_Buff[], uint16_t size)
 	HAL_GPIO_WritePin (RS485_DIR_GPIO_Port, RS485_DIR_Pin, GPIO_PIN_RESET);
 }
 
-/*??????? ??????????? ascii ? hex*/
-void Ascii_To_Hex( uint8_t* buff, uint8_t count)
+void AsciiToHex (uint8_t *buf, uint8_t count)
 {
-	uint8_t i;
-	
-	for(i=0; i<count;i++)
+	for(uint8_t i = 0; i < count; i++)
 	{
-		if (buff[i] <= '9' && buff[i] >= '0')
+		if ((buf[i] >= '0') && (buf[i] <= '9'))
 		{
-			buff[i] -= 0x30;
+			buf[i] -= 0x30;
 		}
 		else
 		{
-			buff[i] = buff[i] - 0x41 + 10;
+			buf[i] -= 0x37;
 		}	
 	}	
 }
@@ -259,7 +256,7 @@ int main(void)
 					Answer_Arr [1] = buf[3];
 					Answer_Arr [2] = buf[4];
 					Answer_Arr [3] = buf[5];
-					Ascii_To_Hex ((uint8_t*) buf, 8);
+					AsciiToHex ((uint8_t*) buf, 8);
 					Hex_Data_Size = 2*(buf[1] + 16*buf[0]);
 					Hex_Data_Address = buf[5] + 16*buf[4] + 256*buf[3] + 4096*buf[2];
 					Hex_Data_Type = buf[7] + 16*buf[6];
@@ -267,7 +264,7 @@ int main(void)
 					if(Hex_Data_Type == 0x00)
 					{
 						HAL_UART_Receive (&huart3, (uint8_t *) buf, Hex_Data_Size, 2000);
-						Ascii_To_Hex ((uint8_t*) buf, Hex_Data_Size);
+						AsciiToHex ((uint8_t*) buf, Hex_Data_Size);
 						int j = 0;
 						for(int i = 0; i < Hex_Data_Size; i += 2)
 						{
@@ -279,7 +276,7 @@ int main(void)
 						//HAL_Delay (180);
 						//printf ("MemPageBuf: %02x %02x %02x %02x %02x %02x %02x %02x \r\n", MemPageBuf[7], MemPageBuf[6], MemPageBuf[5], MemPageBuf[4], MemPageBuf[3], MemPageBuf[2], MemPageBuf[1], MemPageBuf[0]);
 						HAL_UART_Receive (&huart3, (uint8_t *) buf, 2, 2000);
-						Ascii_To_Hex ((uint8_t*) buf, 2);
+						AsciiToHex ((uint8_t*) buf, 2);
 						Hex_Data_Income_Crc = (buf[1] + 16*buf[0]);
 						Hex_Data_Calculated_Crc = 256 - Hex_Data_Calculated_Crc;
 						if (Hex_Data_Calculated_Crc == Hex_Data_Income_Crc)
