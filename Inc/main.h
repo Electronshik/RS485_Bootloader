@@ -36,6 +36,19 @@ extern "C" {
 
 /* Exported types ------------------------------------------------------------*/
 /* USER CODE BEGIN ET */
+typedef enum
+{
+	false,
+	true
+} bool;
+
+typedef enum
+{
+	MAIN_APP_START,
+	WAIT_FOR_UPDATE,
+	UPDATE_LOADED_TO_MEM,
+
+} boot_state_t;
 
 /* USER CODE END ET */
 

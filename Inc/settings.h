@@ -6,14 +6,12 @@
 extern "C" {
 #endif
 
+#include "main.h"
+
 #define	USE_DEBUG_PRINTF
-//#define	USE_DEBUG_IP
 //#define	USE_DEFAULT_SETTINGS
-#define	USE_UDP_REMOTE_IP
 
 #define I2C_EEPROM_PAGE_SIZE		64
-
-//#include "stdbool.h"
 
 typedef enum
 {
@@ -32,8 +30,8 @@ typedef enum
 typedef struct
 {
 	unsigned char writing_tag_begin;
-	unsigned char Main_Led_Value;
-	unsigned char Mon_IR_Value;
+	boot_state_t FlashUpdateFlag;
+	unsigned int SizeOfFirmware;
 	unsigned char writing_tag_end;
 
 } Settings_t;
@@ -41,10 +39,10 @@ typedef struct
 #pragma pack (pop)
 //~ Main settings ~//
 
-//extern I2C_HandleTypeDef hi2c1;
-
-//hex_rec_type_t CheckHexCrc (unsigned char * line);
-//unsigned char *GetHexData (unsigned char * line);
+extern Settings_t Settings;
+;
+void Setting_Save (void);
+void Settings_Init (bool reset_to_default);
 
 int i2c_eeprom_erase (void);
 int i2c_eeprom_write_page (unsigned short PageAddress, unsigned char *Data);

@@ -1,11 +1,11 @@
 #include "settings.h"
 #include "stm32f1xx_hal.h"
-#include "main.h"
 
 #define I2C_EEPROM_ADDRESS			0x50
 #define	I2C_EEPROM_TIMEOUT			10
 #define	I2C_EEPROM_WRITE_DELAY		10
-#define	MEMORY_ADDRESS				0x00
+#define	SETTING_PAGE_ADDR			0x00
+#define	SETTING_BACKUP_PAGE_ADDR	I2C_EEPROM_PAGE_SIZE
 
 #ifndef	USE_DEBUG_PRINTF
 	#define		printf(...)		(0)
@@ -13,10 +13,124 @@
 
 #include "i2c.h"
 
+Settings_t Settings;
+
+static unsigned char writing_labels[4], writing_tag[1];
+
 //extern I2C_HandleTypeDef hi2c1;
 static void I2C_ClearBusyFlagErratum (I2C_HandleTypeDef *hi2c, uint32_t timeout);
 static uint8_t wait_for_gpio_state_timeout (GPIO_TypeDef *port, uint16_t pin, GPIO_PinState state, uint32_t timeout);
 //static void MX_I2C1_Init (void);
+static void Settings_Structure_Init (void);
+void Settings_Save (void);
+
+void Settings_Init (bool reset_to_default)
+{
+	Settings_Structure_Init();
+	MX_I2C1_Init();
+	HAL_Delay(I2C_EEPROM_WRITE_DELAY);
+#ifdef	USE_DEFAULT_SETTINGS
+	reset_to_default = true;
+#endif
+	if (!reset_to_default)
+	{
+		if (i2c_eeprom_read(SETTING_PAGE_ADDR, (uint8_t *)&Settings, sizeof(Settings)) > 0)
+		{
+			if ((Settings.writing_tag_begin == Settings.writing_tag_end) && (Settings.writing_tag_begin != 0x00) && (Settings.writing_tag_begin != 0xFF))
+			{
+				printf ("Settings was successfully readed from EEPROM \n\r");
+			}
+			else
+			{
+				printf ("Data from EEPROM is incorrect! Trying to read backup..\n\r");
+				if (i2c_eeprom_read(SETTING_BACKUP_PAGE_ADDR, (uint8_t *)&Settings, sizeof(Settings)) > 0)
+				{
+					if ((Settings.writing_tag_begin == Settings.writing_tag_end) && (Settings.writing_tag_begin != 0x00) && (Settings.writing_tag_begin != 0xFF))
+					{
+						printf ("Backup from EEPROM is successfully readed! Saving settings.. \n\r");
+						Settings_Save();
+					}
+					else
+					{
+						printf ("Backup data from EEPROM is incorrect! Reset to default..\n\r");
+						Settings_Structure_Init();
+						Settings_Save();
+						printf ("Settings is reseted to default! \n\r");
+					}
+				}
+				else
+				{
+					Settings_Structure_Init();
+					printf ("Settings is reseted to default! \n\r");
+				}
+			}
+		}
+		else
+		{
+			Settings_Structure_Init();
+			printf ("Settings is reseted to default! \n\r");
+		}
+	}
+	else
+	{
+		printf ("Settings is reseted to default! \n\r");
+		Settings_Save();
+	}
+}
+
+void Settings_Structure_Init (void)
+{
+	//Settings.Echo = _DEF_ECHO_ON;
+}
+
+void Settings_Save (void)
+{
+	if ( HAL_OK != HAL_I2C_Mem_Read (&hi2c1, (uint16_t)I2C_EEPROM_ADDRESS << 1, SETTING_PAGE_ADDR, I2C_MEMADD_SIZE_16BIT, writing_tag, 1, I2C_EEPROM_TIMEOUT) )
+	{
+		printf ("Can't read settings from EEPROM! \n\r");
+		//Global.SetErrorState (EEPROM_ERR, READ_ERROR);
+	}
+	Settings.writing_tag_begin = ++writing_tag[0];
+	if ((Settings.writing_tag_begin == 0x00) || (Settings.writing_tag_begin == 0xFF))	Settings.writing_tag_begin = 0x01;
+	Settings.writing_tag_end = Settings.writing_tag_begin;
+	if (i2c_eeprom_write(SETTING_PAGE_ADDR, (uint8_t *)&Settings, sizeof(Settings)))
+	{
+			HAL_I2C_Mem_Read (&hi2c1, (uint16_t)I2C_EEPROM_ADDRESS << 1, SETTING_PAGE_ADDR, I2C_MEMADD_SIZE_16BIT, writing_tag, 1, I2C_EEPROM_TIMEOUT);
+			writing_labels[0] = writing_tag[0];
+			HAL_I2C_Mem_Read (&hi2c1, (uint16_t)I2C_EEPROM_ADDRESS << 1, SETTING_PAGE_ADDR + sizeof(Settings) - 1, I2C_MEMADD_SIZE_16BIT, writing_tag, 1, I2C_EEPROM_TIMEOUT);
+			writing_labels[1] = writing_tag[0];
+		if (writing_labels[0] == writing_labels[1])
+		{
+			if (i2c_eeprom_write (SETTING_BACKUP_PAGE_ADDR, (uint8_t *)&Settings, sizeof(Settings)))
+			{
+				HAL_I2C_Mem_Read (&hi2c1, (uint16_t)I2C_EEPROM_ADDRESS << 1, SETTING_PAGE_ADDR, I2C_MEMADD_SIZE_16BIT, writing_tag, 1, I2C_EEPROM_TIMEOUT);
+				writing_labels[0] = writing_tag[0];
+				HAL_I2C_Mem_Read (&hi2c1, (uint16_t)I2C_EEPROM_ADDRESS << 1, SETTING_PAGE_ADDR + sizeof(Settings) - 1, I2C_MEMADD_SIZE_16BIT, writing_tag, 1, I2C_EEPROM_TIMEOUT);
+				writing_labels[1] = writing_tag[0];
+				HAL_I2C_Mem_Read (&hi2c1, (uint16_t)I2C_EEPROM_ADDRESS << 1, SETTING_BACKUP_PAGE_ADDR, I2C_MEMADD_SIZE_16BIT, writing_tag, 1, I2C_EEPROM_TIMEOUT);
+				writing_labels[2] = writing_tag[0];
+				HAL_I2C_Mem_Read (&hi2c1, (uint16_t)I2C_EEPROM_ADDRESS << 1, SETTING_BACKUP_PAGE_ADDR + sizeof(Settings) - 1, I2C_MEMADD_SIZE_16BIT, writing_tag, 1, I2C_EEPROM_TIMEOUT);
+				writing_labels[3] = writing_tag[0];
+				if (writing_labels[0] == writing_labels[1] && writing_labels[1] == writing_labels[2] && writing_labels[2] == writing_labels[3])
+				{
+					printf ("Settings was successfully written to EEPROM \n\r");
+				}
+				else
+				{
+					printf ("Can't write settings to EEPROM! \n\r");
+					//Global.SetErrorState (EEPROM_ERR, WRITE_ERROR);
+					//return -1;
+				}
+			}
+		}
+		else
+		{
+			printf ("Can't write settings to EEPROM! \n\r");
+			//Global.SetErrorState (EEPROM_ERR, WRITE_ERROR);
+			//return -1;
+		}
+	}
+}
 
 int i2c_eeprom_write (uint16_t MemAddress, uint8_t *pData, uint16_t Size)
 {

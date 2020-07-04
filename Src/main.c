@@ -28,27 +28,20 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
-#include "RS485_Simple_Boot.c"
 #include "settings.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-typedef enum
-{
-	MAIN_APP_START,
-	WAIT_FOR_UPDATE,
-	UPDATE_LOAD_TO_MEM,
-	FLASH_LOAD
-} boot_state_t;
 typedef  void (*pFunction)(void);
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 #define	APP_ADDRESS				0x08008000
-#define FLASH_PAGE_COUNT		1024
+#define STM_FLASH_PAGE_BYTES		1024
 #define LINES_PER_EEPROM_PAGE	I2C_EEPROM_PAGE_SIZE/16
+#define EEPROM_START_ADDR		I2C_EEPROM_PAGE_SIZE*2
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -67,10 +60,10 @@ uint32_t program_data;//????? ??????? ??????? ?? ????
     uint8_t Hex_Data_Calculated_Crc = 0 , Hex_Data_Income_Crc = 0;
 uint8_t MemPageBuf[I2C_EEPROM_PAGE_SIZE];
 int MemPageCounter = 0;
-int MemPageAddress = 0;
+int MemPageAddress = EEPROM_START_ADDR;
 int EndDataAddress = 0x08010000;
 int AppSize = 8000;
-uint8_t Flash_Buf[FLASH_PAGE_COUNT];
+uint8_t Flash_Buf[STM_FLASH_PAGE_BYTES];
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -160,7 +153,7 @@ int main(void)
 	MX_I2C1_Init();
 	MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
-
+	Settings_Init (false);
   //i2c_eeprom_write (0x00, (unsigned char *)&buf, sizeof(buf));
   //strcpy (buf, "Fuck that shit!");
   //i2c_eeprom_read (0x00, (unsigned char *)&buf, sizeof(buf));
@@ -174,10 +167,10 @@ int main(void)
 	//HAL_UART_Receive (&huart3, (uint8_t *) buf, 7, 8000);
 	State = MAIN_APP_START;
 	//printf ("MAIN: %s", buf);
-	HAL_Delay (300);
-	for (int i = 0; i < 64; i++)
+	HAL_Delay (30);
+	for (int i = 0; i < 32; i++)
 	{
-		HAL_UART_Receive (&huart3, (uint8_t *) buf, 1, 300);
+		HAL_UART_Receive (&huart3, (uint8_t *) buf, 1, 100);
 		if (buf[0] == 'M')
 		{
 			HAL_UART_Receive (&huart3, (uint8_t *) buf, 1, 100);
@@ -192,7 +185,7 @@ int main(void)
 						HAL_UART_Receive (&huart3, (uint8_t *) buf, 3, 100);
 						if ((buf[0] == 'R') && (buf[1] == 'D') && (buf[2] == 'Y'))
 						{
-							HAL_Delay (80);
+							HAL_Delay (30);
 							RS485_Transmit ((uint8_t *) "M03:RDY", 7);
 							State = WAIT_FOR_UPDATE;
 							EndDataAddress = 0x0000;
@@ -204,47 +197,45 @@ int main(void)
 				}
 			}
 		}
-		HAL_Delay (80);
+		HAL_Delay (30);
 	}
 	while (1)
 	{
 		switch (State)
 		{
 			case MAIN_APP_START:
-					printf ("MAIN_APP_START.. \r\n");
+					RS485_Transmit ((uint8_t *) "MAIN_APP_START..\r\n", 18);
 					ExecMainFW ();
 					RS485_Transmit ((uint8_t *) "Not Jumped!!!\r\n", 15);
 				break;
-			case FLASH_LOAD:
+			case UPDATE_LOADED_TO_MEM:
 					EraseStatus = HAL_FLASH_Unlock();
-					printf ("HAL Unlock: %d\r\n", EraseStatus);
 					for(int page_counter = 0; (page_counter < 32) && (EraseStatus == HAL_OK); page_counter++)
 					{
 						EraseStatus = HAL_FLASHEx_Erase (&FlashPage, &PageError);
-						FlashPage.PageAddress = APP_ADDRESS + (FLASH_PAGE_COUNT * page_counter);
+						FlashPage.PageAddress = APP_ADDRESS + (STM_FLASH_PAGE_BYTES * page_counter);
 					}
-					AppSize = ((APP_ADDRESS + EndDataAddress) - APP_ADDRESS) / FLASH_PAGE_COUNT;
+					AppSize = ((APP_ADDRESS + EndDataAddress) - APP_ADDRESS) / STM_FLASH_PAGE_BYTES;
 					printf ("AppSize: %d\r\n", AppSize);
 					for (int j = 0; j <= AppSize; j++)
 					{
-						if (i2c_eeprom_read (j*FLASH_PAGE_COUNT, Flash_Buf, FLASH_PAGE_COUNT) > 0)
+						if (i2c_eeprom_read ((j*STM_FLASH_PAGE_BYTES + EEPROM_START_ADDR), Flash_Buf, STM_FLASH_PAGE_BYTES) > 0)
 						{
-							for (int k = 0; k < FLASH_PAGE_COUNT; k += 4)
+							for (int k = 0; k < STM_FLASH_PAGE_BYTES; k += 4)
 							{
 								WordBuf =  Flash_Buf[k+3] << 24;
 								WordBuf |= Flash_Buf[k+2] << 16;
 								WordBuf |= Flash_Buf[k+1] << 8;
 								WordBuf |= Flash_Buf[k+0];
-								EraseStatus = HAL_FLASH_Program (FLASH_TYPEPROGRAM_WORD, APP_ADDRESS + k + j*FLASH_PAGE_COUNT, (uint64_t) WordBuf);
+								EraseStatus = HAL_FLASH_Program (FLASH_TYPEPROGRAM_WORD, APP_ADDRESS + k + j*STM_FLASH_PAGE_BYTES, (uint64_t) WordBuf);
 								WordBuf = 0;
 							}
 						}
 						//printf ("HAL_FLASH_Program: %d\r\n", EraseStatus);
-						//printf ("j: %x \r\n", APP_ADDRESS + j*FLASH_PAGE_COUNT);
+						//printf ("j: %x \r\n", APP_ADDRESS + j*STM_FLASH_PAGE_BYTES);
 					}
 					EraseStatus = HAL_FLASH_Lock();
-					printf ("HAL Lock: %d\r\n", EraseStatus);
-					HAL_Delay (300);
+					RS485_Transmit ((uint8_t *) "HAL Flash locked\r\n", 18);
 					State = MAIN_APP_START;
 				break;
 			case WAIT_FOR_UPDATE:
@@ -313,10 +304,9 @@ int main(void)
 					}
 					else if (Hex_Data_Type == 0x01)
 					{
-						State = FLASH_LOAD;
+						State = UPDATE_LOADED_TO_MEM;
 						if (MemPageCounter != 0)
 						{
-							State = FLASH_LOAD;
 							Answer_Arr [5] = 'O';
 							Answer_Arr [6] = 'K';
 							int tmp;
