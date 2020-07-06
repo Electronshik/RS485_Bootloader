@@ -116,12 +116,12 @@ int main(void)
 	FLASH_EraseInitTypeDef FlashPage;
 	HAL_StatusTypeDef EraseStatus;
 	uint32_t PageError;
-	
+
 	FlashPage.TypeErase = FLASH_TYPEERASE_PAGES;
 	FlashPage.Banks = FLASH_BANK_1;
 	FlashPage.NbPages = 1;
 	FlashPage.PageAddress = APP_ADDRESS;
-	
+
 	uint32_t WordBuf;
 	char buf [32] = "Hello!\r\n";
   /* USER CODE END 1 */
