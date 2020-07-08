@@ -38,7 +38,7 @@ typedef  void (*pFunction)(void);
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define	APP_ADDRESS				0x08008000
+#define	APP_ADDRESS				0x08004000
 #define STM_FLASH_PAGE_BYTES		1024
 #define LINES_PER_EEPROM_PAGE	I2C_EEPROM_PAGE_SIZE/16
 #define EEPROM_START_ADDR		I2C_EEPROM_PAGE_SIZE*2
@@ -62,7 +62,7 @@ uint8_t MemPageBuf[I2C_EEPROM_PAGE_SIZE];
 int MemPageCounter = 0;
 int MemPageAddress = EEPROM_START_ADDR;
 int EndDataAddress = 0x08010000;
-int AppSize = 8000;
+int AppSize = 0xC000;
 uint8_t Flash_Buf[STM_FLASH_PAGE_BYTES];
 /* USER CODE END PV */
 
